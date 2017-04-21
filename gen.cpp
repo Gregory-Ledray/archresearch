@@ -1,7 +1,7 @@
 //one big file to try to resolve compiling problems
 
 //input processing first
-/* cmd line: ./gen_exec sim_inst.txt supported_inst.txt v.csv */
+/* cmd line: ./genetic sim_inst.txt supported_inst.txt v.csv */
 //sim_inst.txt
 // this file has lines of run instruction bitstrings, one per line. Every line
 // corresponds to one instruction. its runtime will be matched to real time later
@@ -87,6 +87,7 @@ int read_inst(FILE *sim_inst, FILE * supported_inst, struct time_chunk* time_chu
 
         supported_inst_list[line_ct].exec_cycles = atoi(exec_cycles_chars);
         free(exec_cycles_chars);
+        break;
       }
       else if (sec==0)
       {
@@ -100,14 +101,24 @@ int read_inst(FILE *sim_inst, FILE * supported_inst, struct time_chunk* time_chu
       {
         ADD_CHAR(exec_cycles_chars, exec_cycles_chars_len, line[i]);
       }
+      //else if (sec==3) break;
       else{
-        fprintf(stderr, "invalid format for input file with supported_instructions\n");
+        fprintf(stderr, "invalid format for input file with supported_instructions");
         return -1;
       }
     }
     line_ct++;
   }
-  num_inst = line_ct;
+  num_supported_inst = line_ct;
+  #if DEBUG
+  for (int i=0;i<2;i++){
+    fprintf(stderr, "%s\n",supported_inst_list[i].inst_name);
+    fprintf(stderr, "%d\n", supported_inst_list[i].inst_name_len);
+    fprintf(stderr, "%d\n", supported_inst_list[i].inst_len);
+    fprintf(stderr, "%d\n", supported_inst_list[i].exec_cycles);
+    fprintf(stderr, "%d\n", ga_bit_decode_binary_uint(supported_inst_list[i].inst,0,instruction_length) );
+  }
+  #endif
 
   /* populating a time_chunk_list */
   if (populate_time_chunk_list(sim_inst, v, time_chunk_list) < 0) return -1;
@@ -126,28 +137,28 @@ int populate_time_chunk_list(FILE *sim_inst, FILE *v, struct time_chunk* time_ch
   time_chunk_list = (struct time_chunk *) calloc(v_len, sizeof(struct time_chunk) );
   int i, a;
 
-
   /* pupulating a time_chunk_list */
   while (fgets(line, sizeof(line), v)){
     fprintf(stderr, "%s", line); /* debug */
-    time_chunk_list[i].real_time = 100;
+    time_chunk_list[i].real_time = 100.0;
     char * double_string = (char*) calloc(1, sizeof(char));
     int double_string_len = 1;
     for (i=0;i<256;i++)
     {
-      if (line[i] == '\n')
+      if (line[i] == '\n' || line[i] == '\0')
       {
         time_chunk_list[line_ct].voltage = atof(double_string);
         free(double_string);
         if (i==0) time_chunk_list[line_ct].dv = 0;
         else time_chunk_list[line_ct].dv = time_chunk_list[line_ct].voltage - time_chunk_list[i-1].voltage;
+        break;
       }
       else if (line[i] == '.' || (line[i] <= '9' && line[i] >= '0') )
       {
         ADD_CHAR(double_string, double_string_len, line[i]);
       }
       else{
-        fprintf(stderr, "invalid format for input file with voltages\n");
+        fprintf(stderr, "invalid format for input file with voltages; line[i]: %c\n", line[i]);
         return -1;
       }
     }
@@ -183,6 +194,7 @@ int populate_time_chunk_list(FILE *sim_inst, FILE *v, struct time_chunk* time_ch
         }
         input_instructions[line_ct] = ja;
         free(bitstring_string);
+        break;
       }
       else if (line[i] <= '1' && line[i] >= '0'){
         ADD_CHAR(bitstring_string, bitstring_string_len, line[i]);
@@ -194,31 +206,50 @@ int populate_time_chunk_list(FILE *sim_inst, FILE *v, struct time_chunk* time_ch
     }
     line_ct++;
   }
-  int current_time_chunk = 0;
-  int max_exec_cycles = 0;
-  double current_exec_cycles = 0.0;
+  int current_time_chunk;
+  double max_exec_cycles = 0.0; // tracks the cycle we're on. round down to get correct time_chunk
+  //double current_exec_cycles = 0.0;
   int cur_time_chunk_len = 0;
-/* transfer members of input_instructions into the correct time_chunk */
+/* transfer members of input_instructions (bitstrings) into the correct time_chunk */
+/* to do so, go through every input/sim_inst and keep track of the current time chunk
+current time chunk is floor of max_exec_cycles.
+@ end of processing an instruction, max_exec_cycles += time of inst just processed / sim_speed
+with correct time_chunk known by converting max_exec_cycles into an int,
+add the instruction to that time chunk
+*/
   for (a=0;a<sim_inst_len;a++)
   {
-    if (!cur_time_chunk_len) max_exec_cycles += time_chunk_list[current_time_chunk].real_time / sim_speed;
+    current_time_chunk = (int) max_exec_cycles;
+    fprintf(stderr, "cur_time_chunk: %d\n", current_time_chunk );
     unsigned int sim_inst_being_tested = ga_bit_decode_binary_uint(input_instructions[a], 0, instruction_length);
-    for (i=0;i<line_ct;i++)
+    fprintf(stderr, "ga_bit_decode_binary_uint worked: %d\n", sim_inst_being_tested);
+    #if DEBUG
+    fprintf(stderr, "a\n");
+    for (int i=0;i<2;i++){
+      fprintf(stderr, "%s\n",supported_inst_list[i].inst_name);
+      fprintf(stderr, "%d\n", supported_inst_list[i].inst_name_len);
+      fprintf(stderr, "%d\n", supported_inst_list[i].inst_len);
+      fprintf(stderr, "%d\n", supported_inst_list[i].exec_cycles);
+    }
+    #endif
+    for (i=0;i<num_supported_inst;i++)
     {
-      if ( sim_inst_being_tested == ga_bit_decode_binary_uint(supported_inst_list[i].inst,0,instruction_length) )
+      fprintf(stderr, "%p", supported_inst_list[i].inst);
+      unsigned int to_compare = ga_bit_decode_binary_uint(supported_inst_list[i].inst,0,instruction_length);
+      fprintf(stderr, "%d\n", to_compare);
+      if ( sim_inst_being_tested == to_compare )
       {
-        current_exec_cycles+=supported_inst_list[i].exec_cycles;
+        fprintf(stderr, "ga\n");
         ADD_INST_TO_TIME_CHUNK(time_chunk_list[current_time_chunk].inst, cur_time_chunk_len, input_instructions[a]);
-        if (current_exec_cycles > max_exec_cycles)
-        {
-          current_time_chunk++;
-          cur_time_chunk_len = 0;
-        }
         break;
       }
     }
-  }
+    // update max_exec_cycles and if new one will be greater, update cur_time_chunk_len
+    max_exec_cycles += time_chunk_list[current_time_chunk].real_time / sim_speed;
+    if ( ((int) max_exec_cycles) > current_time_chunk) cur_time_chunk_len = 0;
 
+  }
+  fprintf(stderr, "a\n");
   free(input_instructions);
 }
 
@@ -248,7 +279,7 @@ int perceptron(byte * inst)
   /* verify that this is a legitimate instruction */
   int i=0;
   int found = 0;
-  for (i=0;i<num_inst;i++)
+  for (i=0;i<num_supported_inst;i++)
   {
     if (ga_bit_decode_binary_uint(supported_inst_list[i].inst, 0, instruction_length)==inst_uint )
      {found = 1; break;}
