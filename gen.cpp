@@ -1,5 +1,17 @@
 //one big file to try to resolve compiling problems
+
 //input processing first
+/* cmd line: ./gen_exec sim_inst.txt supported_inst.txt v.csv */
+//sim_inst.txt
+// this file has lines of run instruction bitstrings, one per line. Every line
+// corresponds to one instruction. its runtime will be matched to real time later
+/* file format - lines of: inst_bitstring */
+
+// supported_inst.txt
+/* file format - lines of: inst_name instruction_bitstring exec_cycles*/
+//v.csv
+// every line has the voltage in 100 us (here assumed to be one instruction cycle) increments
+/* file format - lines of: double_string */
 
 #include <stdio.h>
 extern "C"{
