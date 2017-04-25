@@ -1,24 +1,34 @@
 //one big file to try to resolve compiling problems
 
-//input processing first
-/* cmd line: ./genetic sim_inst.txt supported_inst.txt v.csv */
-//sim_inst.txt
-// this file has lines of run instruction bitstrings, one per line. Every line
-// corresponds to one instruction. its runtime will be matched to real time later
-/* file format - lines of: inst_bitstring */
+//input processing with a LUT
+/*
+cmd line: ./genetic LUT_Test.txt
+// lookup table format: nop_instructions vector_instructions power
+lookup table data structure:
+to look up the data or its nearest neighbor in O(1):
 
-// supported_inst.txt
-/* file format - lines of: inst_name instruction_bitstring exec_cycles*/
-//v.csv
-// every line has the voltage in 100 us (here assumed to be one instruction cycle) increments
-/* file format - lines of: double_string */
+*/
 
 #include <stdio.h>
 extern "C"{
 #include <gaul.h>
 }
 #include <stdlib.h>
+#include <string>
 #include "gen.hpp"
+
+//LUT code
+double euclidean_distance(uint x, uint y, uint x2, uint y2){
+  double op1, op2;
+  if (x>x2) op1 = (double) (x-x2)*(x-x2);
+  else op1 = (double) (x2-x)*(x2-x);
+  if (y>y2) op2 = (double) (y-y2)*(y-y2);
+  else op2 = (double) (y2-y)*(y2-y);
+
+  return sqrt( op1+op2 );
+}
+
+
 
 int how_long_is_file(FILE *fp){
   int size = -1;
@@ -39,224 +49,6 @@ char_ptr = (char *) realloc(char_ptr, current_size)
 ptr_byte_ptr = (byte **) realloc(ptr_byte_ptr, current_size+1); \
 ptr_byte_ptr[current_size] = new_byte_ptr; \
 current_size++
-
-/* requires the file to already be open for reading
- */
-int read_inst(FILE *sim_inst, FILE * supported_inst, struct time_chunk* time_chunk_list, FILE* v){
-  int line_len;
-  char line[256];
-  int line_ct = 0;
-
-  /* pupulating supported_inst_list */
-  /* file format lines of: inst_name instruction_bitstring exec_cycles*/
-  while (fgets(line, sizeof(line), supported_inst)){
-    fprintf(stderr, "%s", line); /* debug */
-    int i;
-    int sec = 0; /* sec 0 = inst_name; 1 = bitstring; 2 = exec_cycles */
-    char * inst_name = (char*) calloc(1, sizeof(char));
-    int inst_name_len = 1;
-    char * inst_chars = (char*)calloc(1, sizeof(char));
-    int inst_len = 1;
-    char * exec_cycles_chars = (char*)calloc(1, sizeof(char));
-    int exec_cycles_chars_len = 1;
-    for (i=0;i<256;i++)
-    {
-      if (line[i] == ' ') sec++;
-      else if (line[i] == '\n')
-      /* this bit will resolve all char arrays into a meaningful struct inst */
-      {
-        inst_name[inst_name_len-1] = '\0';
-        inst_chars[inst_len-1] = '\0';
-        exec_cycles_chars[exec_cycles_chars_len-1] = '\0';
-
-        supported_inst_list[line_ct].inst_name = inst_name;
-        supported_inst_list[line_ct].inst_name_len = inst_name_len;
-
-        supported_inst_list[line_ct].inst_len = inst_len - 1;
-        byte * inst = ga_bit_new(inst_len-1);
-        int ia;
-        for (ia =0;ia<inst_len-1;ia++){
-          if (inst_chars[ia] == '0')ga_bit_clear(inst, ia);
-          else if (inst_chars[ia] == '1')ga_bit_set(inst, ia);
-          else {
-            fprintf(stderr, "invalid input for instruction bitstring - not 0s and 1s\n");
-            return -1;
-          }
-        }
-        free(inst_chars);
-
-        supported_inst_list[line_ct].exec_cycles = atoi(exec_cycles_chars);
-        free(exec_cycles_chars);
-        break;
-      }
-      else if (sec==0)
-      {
-        ADD_CHAR(inst_name, inst_name_len, line[i]);
-      }
-      else if (sec == 1)
-      {
-        ADD_CHAR(inst_chars, inst_len, line[i]);
-      }
-      else if (sec == 2)
-      {
-        ADD_CHAR(exec_cycles_chars, exec_cycles_chars_len, line[i]);
-      }
-      //else if (sec==3) break;
-      else{
-        fprintf(stderr, "invalid format for input file with supported_instructions");
-        return -1;
-      }
-    }
-    line_ct++;
-  }
-  num_supported_inst = line_ct;
-  #if DEBUG
-  for (int i=0;i<2;i++){
-    fprintf(stderr, "%s\n",supported_inst_list[i].inst_name);
-    fprintf(stderr, "%d\n", supported_inst_list[i].inst_name_len);
-    fprintf(stderr, "%d\n", supported_inst_list[i].inst_len);
-    fprintf(stderr, "%d\n", supported_inst_list[i].exec_cycles);
-    fprintf(stderr, "%d\n", ga_bit_decode_binary_uint(supported_inst_list[i].inst,0,instruction_length) );
-  }
-  #endif
-
-  /* populating a time_chunk_list */
-  if (populate_time_chunk_list(sim_inst, v, time_chunk_list) < 0) return -1;
-}
-
-int populate_time_chunk_list(FILE *sim_inst, FILE *v, struct time_chunk* time_chunk_list)
-{
-  char line[256];
-  int line_ct = 0;
-  sim_inst_len = how_long_is_file(sim_inst);
-  v_len = how_long_is_file(v);
-  if (v_len < 1 || sim_inst_len < 1){
-    fprintf(stderr, "size of files sim_instructions or voltage info was less than 1\n");
-    return -1;
-  }
-  time_chunk_list = (struct time_chunk *) calloc(v_len, sizeof(struct time_chunk) );
-  int i, a;
-
-  /* pupulating a time_chunk_list */
-  while (fgets(line, sizeof(line), v)){
-    fprintf(stderr, "%s", line); /* debug */
-    time_chunk_list[i].real_time = 100.0;
-    char * double_string = (char*) calloc(1, sizeof(char));
-    int double_string_len = 1;
-    for (i=0;i<256;i++)
-    {
-      if (line[i] == '\n' || line[i] == '\0')
-      {
-        time_chunk_list[line_ct].voltage = atof(double_string);
-        free(double_string);
-        if (i==0) time_chunk_list[line_ct].dv = 0;
-        else time_chunk_list[line_ct].dv = time_chunk_list[line_ct].voltage - time_chunk_list[i-1].voltage;
-        break;
-      }
-      else if (line[i] == '.' || (line[i] <= '9' && line[i] >= '0') )
-      {
-        ADD_CHAR(double_string, double_string_len, line[i]);
-      }
-      else{
-        fprintf(stderr, "invalid format for input file with voltages; line[i]: %c\n", line[i]);
-        return -1;
-      }
-    }
-    line_ct++;
-  }
-  line_ct = 0;
-
-  instruction_length = -1;
-  byte ** input_instructions = (byte **) calloc( sim_inst_len, sizeof(byte *) );
-
-/* populate input_instructions */
-  while (fgets(line, sizeof(line), sim_inst)){
-    fprintf(stderr, "%s", line); /* debug */
-    char * bitstring_string = (char*) calloc(1, sizeof(char));
-    int bitstring_string_len = 1;
-    for (i=0;i<256;i++)
-    {
-      if (line[i] == '\n') {
-        byte * ja = ga_bit_new(bitstring_string_len-1);
-        if (instruction_length == -1) instruction_length = bitstring_string_len-1;
-        else if (instruction_length != bitstring_string_len-1){
-          fprintf(stderr, "Error: Bitstring lengths differ\n");
-          return -1;
-        }
-        for (a=0;a<bitstring_string_len-1;a++)
-        {
-          if (bitstring_string[a] == '0') ga_bit_clear(ja, a);
-          else if (bitstring_string[a] == '1') ga_bit_set(ja, a);
-          else {
-            fprintf(stderr, "Error: Bitstring not string in sim_inst\n");
-            return -1;
-          }
-        }
-        input_instructions[line_ct] = ja;
-        free(bitstring_string);
-        break;
-      }
-      else if (line[i] <= '1' && line[i] >= '0'){
-        ADD_CHAR(bitstring_string, bitstring_string_len, line[i]);
-      }
-      else{
-        fprintf(stderr, "invalid format for input file with simulator instructions\n");
-        return -1;
-      }
-    }
-    line_ct++;
-  }
-  int current_time_chunk;
-  double max_exec_cycles = 0.0; // tracks the cycle we're on. round down to get correct time_chunk
-  //double current_exec_cycles = 0.0;
-  int cur_time_chunk_len = 0;
-/* transfer members of input_instructions (bitstrings) into the correct time_chunk */
-/* to do so, go through every input/sim_inst and keep track of the current time chunk
-current time chunk is floor of max_exec_cycles.
-@ end of processing an instruction, max_exec_cycles += time of inst just processed / sim_speed
-with correct time_chunk known by converting max_exec_cycles into an int,
-add the instruction to that time chunk
-*/
-  for (a=0;a<sim_inst_len;a++)
-  {
-    current_time_chunk = (int) max_exec_cycles;
-    fprintf(stderr, "cur_time_chunk: %d\n", current_time_chunk );
-    unsigned int sim_inst_being_tested = ga_bit_decode_binary_uint(input_instructions[a], 0, instruction_length);
-    fprintf(stderr, "ga_bit_decode_binary_uint worked: %d\n", sim_inst_being_tested);
-    #if DEBUG
-    fprintf(stderr, "a\n");
-    for (int i=0;i<2;i++){
-      fprintf(stderr, "%s\n",supported_inst_list[i].inst_name);
-      fprintf(stderr, "%d\n", supported_inst_list[i].inst_name_len);
-      fprintf(stderr, "%d\n", supported_inst_list[i].inst_len);
-      fprintf(stderr, "%d\n", supported_inst_list[i].exec_cycles);
-    }
-    #endif
-    for (i=0;i<num_supported_inst;i++)
-    {
-      fprintf(stderr, "%p", supported_inst_list[i].inst);
-      unsigned int to_compare = ga_bit_decode_binary_uint(supported_inst_list[i].inst,0,instruction_length);
-      fprintf(stderr, "%d\n", to_compare);
-      if ( sim_inst_being_tested == to_compare )
-      {
-        fprintf(stderr, "ga\n");
-        ADD_INST_TO_TIME_CHUNK(time_chunk_list[current_time_chunk].inst, cur_time_chunk_len, input_instructions[a]);
-        break;
-      }
-    }
-    // update max_exec_cycles and if new one will be greater, update cur_time_chunk_len
-    max_exec_cycles += time_chunk_list[current_time_chunk].real_time / sim_speed;
-    if ( ((int) max_exec_cycles) > current_time_chunk) cur_time_chunk_len = 0;
-
-  }
-  fprintf(stderr, "a\n");
-  free(input_instructions);
-}
-
-// the genetic algorithm second
-#include <gaul.h>
-#include <string>
-#include <stdio.h>
 
 int target_fitness = 50;
 
