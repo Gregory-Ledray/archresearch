@@ -65,34 +65,6 @@ run instructions and get more data */
  /* current version is dumber: just look at the time_chunk of the inst itself */
  /* this means i'm only looking at the effects of an instruction on its own time */
  /* cumulative effects are lost */
-int perceptron(byte * inst)
-{
-  unsigned int inst_uint = ga_bit_decode_binary_uint(inst,0,instruction_length);
-  /* verify that this is a legitimate instruction */
-  int i=0;
-  int found = 0;
-  for (i=0;i<num_supported_inst;i++)
-  {
-    if (ga_bit_decode_binary_uint(supported_inst_list[i].inst, 0, instruction_length)==inst_uint )
-     {found = 1; break;}
-  }
-  if (!found) {return -1;} /* no such instruction */
-
-  double fit=0;
-
-  /* for every time chunk, try to find this instruction */
-  for (i=0;i<v_len;i++) {
-    int x=0;
-    for (x=0;x<time_chunk_list[i].inst_len;x++){
-      if (ga_bit_decode_binary_uint(time_chunk_list[i].inst[x], 0, instruction_length) == inst_uint)
-      {/* FITNESS - BASED ON THIS time_chunk_list VALUE */
-        fit+=time_chunk_list[i].dv;
-      }
-    }
-  }
-
-  return (int) (1000*fit);
-}
 
 boolean struggle_score(population *pop, entity *entity)
   {
