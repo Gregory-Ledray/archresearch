@@ -56,12 +56,15 @@ char_ptr = (char *) realloc(char_ptr, current_size)
 int target_fitness = 50;
 /* requires the file to already be open for reading
  */
-int read_inst(FILE *sim_inst, std::ifstream supported_inst, struct time_chunk* time_chunk_list, std::ifstream LUT){
-	int line_count=0;
+int read_inst(char* sim_inst_filename, char* supported_inst, struct time_chunk* time_chunk_list, char* LUT){
+  std::ifstream supported_inst_;
+  supported_inst_.open(supported_inst);
+  if (!supported_inst_.is_open()) return -1;
+  int line_count=0;
 	std::string name, bytes;
 	int cyc;
       /* this bit will resolve all char arrays into a meaningful struct inst */
-	while(supported_inst >> name >> bytes >> cyc)
+	while(supported_inst_ >> name >> bytes >> cyc)
     {
 		struct inst* new_entry = (struct inst*) calloc(1, sizeof(inst));
 		new_entry->inst_name = name;
@@ -99,7 +102,7 @@ int read_inst(FILE *sim_inst, std::ifstream supported_inst, struct time_chunk* t
   // at this point I have all of the supported instructions in the supported_inst_list
 
   // the next step is to read in the LUT
-  if (populate_LUT_vector(LUT) < 0) return -1;
+  if (populate_LUT(LUT, sim_inst_filename) < 0) return -1;
 
   /* populating a time_chunk_list */
   //if (populate_time_chunk_list(sim_inst, LUT, time_chunk_list) < 0) return -1;
@@ -208,44 +211,21 @@ int main(int argc, char **argv)
       return -1;
     }
 
-    if (populate_LUT_table(argv[1], argv[3]) < 0){
+    fprintf(stderr, "Populating the LUT\n");
+
+    if (populate_LUT(argv[1], argv[3]) < 0){
       fprintf(stderr, "LUT table generation failed\n");
       return -1;
     }
 
-
-    /* open files */
-    std::ifstream LUT;
-    LUT.open(argv[1]);
-
-    std::ifstream supported_inst;
-    supported_inst.open(argv[2]);
-
-	FILE* sim_inst = fopen(argv[3], "r");
-    if (sim_inst == NULL){
-      e("failed to open sim_inst file");
-    }
-
-	/* process files for length */
-    int supported_inst_file_length = 1;// dumb since old function call fails
-    if (supported_inst_file_length < 1) {
-      fclose(sim_inst);
-      supported_inst.close();
-      LUT.close();
-      e("failed to process supported_inst");
-    }
+    fprintf(stderr, "LUT processing for the genetic algorithm\n");
 
 	// do all of the file I/O
-    if (read_inst(sim_inst, supported_inst, time_chunk_list, LUT) < 0){
-      fclose(sim_inst);
-      supported_inst.close();
-      LUT.close();
+    if (read_inst(argv[3], argv[2], time_chunk_list, argv[1]) < 0){
       e("failed to process supported_inst or sim_inst_len - 2");
-
     }
-    fclose(sim_inst);
-    supported_inst.close();
-    LUT.close();
+
+    fprintf(stderr, "Beginning the genetic algorithm\n");
 
   population *pop=NULL;	/* The population of solutions. */
 

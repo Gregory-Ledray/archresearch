@@ -32,22 +32,29 @@ std::string exec(const char* cmd) {
         throw;
     }
     pclose(pipe);
+    fprintf(stderr, "result: %s", result.c_str());
     return result;
 }
 
-int populate_LUT_table(char* LUT_filename, char* sim_inst_filename){
-  std::ofstream LUT;
-  LUT.open(LUT_filename, std::fstream::app);
+int populate_LUT(char* LUT_filename, char* sim_inst_filename){
   std::ifstream sim_inst;
   sim_inst.open(sim_inst_filename);
-  if (LUT.is_open() && sim_inst.is_open())
+  if (sim_inst.is_open())
   {
     //may wish to generate the ptrace from the sim_inst file here!
     //the output should be LUT.ptrace
     int num_nops = 5;
     int num_vectors = 4;
 
-    if (append_LUT_table(LUT) < 0)
+    // this function creates a ptrace called LUT.ptrace
+    if (create_ptrace(5, 4) < 0)
+    {
+      sim_inst.close();
+      return -1;
+    }//worked in testing
+
+    // actually append the LUT given voltspot input files exist
+    if (append_LUT(LUT_filename, num_nops, num_vectors) < 0)
     {
       sim_inst.close();
       return -1;
@@ -59,25 +66,53 @@ int populate_LUT_table(char* LUT_filename, char* sim_inst_filename){
     return -1;
   }
 
-  LUT.close();
   sim_inst.close();
 
   return 1;
 }
 
-// after a trace has been generated from voltspot, this function
-append_LUT_table(std::ofstream LUT)
+// create a ptrace from the num_nops and num_vectors inputs
+// STATUS: this works
+int create_ptrace(int num_nops, int num_vectors)
 {
-  exec("cd /home/grego/gem5/VoltSpot-2.0 2>&1");
+  std::ofstream LUT_ptrace;
+  LUT_ptrace.open("/home/grego/gem5/VoltSpot-2.0/LUT.ptrace");
+  if (!LUT_ptrace.is_open())
+  {
+    fprintf(stderr, "failed to open LUT.ptrace\n");
+    return -1;
+  }
+
+  LUT_ptrace << "ICache1	BTB1	BrP1	InstBuf1	InstDec1	IntRAT1	FlpRAT1	FL1	DCache1	LdQ1	StQ1	Itlb1	Dtlb1	IntRF1	FlpRF1	IntIW1	FlpIW1	ROB1	ALU1	FPU1	CplALU1	ICache2	BTB2	BrP2	InstBuf2	InstDec2	IntRAT2	FlpRAT2	FL2	DCache2	LdQ2	StQ2	Itlb2	Dtlb2	IntRF2	FlpRF2	IntIW2	FlpIW2	ROB2	ALU2	FPU2	CplALU2	NoC1	NoC2	L2_1	L2_2	MC1	\n";
+
+  for (int i=0;i<num_nops;i++)
+  {
+    LUT_ptrace << "0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000\n";
+  }
+
+  for (int i=0;i<num_vectors;i++)
+  {
+    LUT_ptrace << "1.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000\n";
+  }
+
+  return 1;
+}
+
+// generates a trace from voltspot,
+// will append the LUT table with the largest percentage droop
+// STATUS: command line arguments fail
+int append_LUT(char* LUT_filename, int num_nops, int num_vectors)
+{
+  std::ofstream LUT_out;
+  LUT_out.open(LUT_filename);
+  if (!LUT_out.is_open()) return -1;
 
   // this will run the program with the power traces from ptrace
-  exec("./voltspot -c pdn.config -f example.flp -p LUT.ptrace -v trans.vtrace 2>&1");
+  exec("(cd /home/grego/gem5/VoltSpot-2.0 && ./voltspot -c pdn.config -f example.flp -p LUT.ptrace -v trans2.vtrace && cwd && cd /home/grego/gem5 2>&1)");
 
-  exec("cd /home/grego/gem5 2>&1");
-
-  // to get the LUT table generated, look in trans.vtrace
+  // VoltSpot output is in trans.vtrace
   std::ifstream trace_output;
-  trace_output.open("/home/grego/gem5/VoltSpot-2.0/trans.vtrace");
+  trace_output.open("/home/grego/gem5/VoltSpot-2.0/trans2.vtrace");
 
   if (!trace_output.is_open())
   {
@@ -85,6 +120,7 @@ append_LUT_table(std::ofstream LUT)
     return -1;
   }
 
+  // disregard garbage config information
   std::string line;
   int getit = 0;
   while( getline(trace_output, line) )
@@ -96,6 +132,7 @@ append_LUT_table(std::ofstream LUT)
     }
   }
 
+  // pull in the interesting data
   double max_max_onchip_drop = -50.0;
   double max_onchip_drop;
   double pkgDrop;
@@ -106,8 +143,10 @@ append_LUT_table(std::ofstream LUT)
     }
   }
 
-  LUT << (to_string(num_nops) + " " + to_string(num_vectors) + " " + to_string(max_max_onchip_drop) );
+  // append the LUT with the largest percentage droop
+  LUT_out << (to_string(num_nops) + " " + to_string(num_vectors) + " " + to_string(max_max_onchip_drop) );
 
   trace_output.close();
 
+  return 1;
 }

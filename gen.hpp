@@ -62,7 +62,7 @@ void e(char * string);
 
 int how_long_is_file(FILE *fp);
 int populate_time_chunk_list(FILE *sim_inst, FILE *v, struct time_chunk* time_chunk_list);
-int read_inst(FILE *sim_inst, std::ifstream supported_inst, struct time_chunk* time_chunk_list, std::ifstream v);
+int read_inst(char* sim_inst_filename, char* supported_inst, struct time_chunk* time_chunk_list, char* v);
 
 //LUT creation and sorting
 int populate_LUT_vector(std::ifstream LUT);
