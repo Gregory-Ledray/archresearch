@@ -8,14 +8,21 @@ lookup table data structure:
 to look up the data or its nearest neighbor in O(1):
 
 */
+#include "gen.hpp"
+#include "run_voltspot.hpp"
 
-#include <stdio.h>
+// the genetic algorithm second
 extern "C"{
 #include <gaul.h>
 }
+#include <stdio.h>
 #include <stdlib.h>
+#include <fstream>
+#include <algorithm>
+#include <vector>
+#include <cmath>
 #include <string>
-#include "gen.hpp"
+
 
 //LUT code
 double euclidean_distance(uint x, uint y, uint x2, uint y2){
@@ -45,12 +52,81 @@ char_ptr[current_size-1] = new_char; \
 current_size++; \
 char_ptr = (char *) realloc(char_ptr, current_size)
 
-#define ADD_INST_TO_TIME_CHUNK(ptr_byte_ptr, current_size,new_byte_ptr) \
-ptr_byte_ptr = (byte **) realloc(ptr_byte_ptr, current_size+1); \
-ptr_byte_ptr[current_size] = new_byte_ptr; \
-current_size++
 
 int target_fitness = 50;
+/* requires the file to already be open for reading
+ */
+int read_inst(FILE *sim_inst, std::ifstream supported_inst, struct time_chunk* time_chunk_list, std::ifstream LUT){
+	int line_count=0;
+	std::string name, bytes;
+	int cyc;
+      /* this bit will resolve all char arrays into a meaningful struct inst */
+	while(supported_inst >> name >> bytes >> cyc)
+    {
+		struct inst* new_entry = (struct inst*) calloc(1, sizeof(inst));
+		new_entry->inst_name = name;
+		new_entry->exec_cycles = cyc;
+
+		byte * inst = ga_bit_new(bytes.length());
+		int ia;
+        for (ia =0;ia<bytes.length();ia++){
+          if (bytes[ia] == '0')ga_bit_clear(inst, ia);
+          else if (bytes[ia] == '1')ga_bit_set(inst, ia);
+          else {
+            fprintf(stderr, "invalid input for instruction bitstring - not 0s and 1s\n");
+            return -1;
+          }
+        }
+		new_entry->inst = inst;
+		new_entry->inst_len = bytes.length();
+
+		instruction_length = bytes.length();
+
+		supported_inst_list.push_back(new_entry);
+
+		line_count++;
+    }
+  num_supported_inst = line_count;
+  #if DEBUG
+  for (int i=0;i<2;i++){
+    fprintf(stderr, "%s\n", supported_inst_list[i]->inst_name.c_str());
+    fprintf(stderr, "%d\n", supported_inst_list[i]->inst_len);
+    fprintf(stderr, "%d\n", supported_inst_list[i]->exec_cycles);
+    fprintf(stderr, "%d\n", ga_bit_decode_binary_uint(supported_inst_list[i]->inst,0,instruction_length) );
+  }
+  #endif
+
+  // at this point I have all of the supported instructions in the supported_inst_list
+
+  // the next step is to read in the LUT
+  if (populate_LUT_vector(LUT) < 0) return -1;
+
+  /* populating a time_chunk_list */
+  //if (populate_time_chunk_list(sim_inst, LUT, time_chunk_list) < 0) return -1;
+}
+
+bool lutentrysorter(struct LUT_entry* a, struct LUT_entry* b){
+  return (a->vector_instructions < b->vector_instructions);
+}
+
+// populate std::vector<struct LUT_entry*> LUT_entry_list
+int populate_LUT_vector(std::ifstream LUT)
+{
+	int a, b;
+	double c;
+
+	while(LUT >> a >> b >> c){
+		struct LUT_entry* new_entry = (struct LUT_entry*) calloc(1, sizeof(LUT_entry));
+		new_entry->nop_instructions = a;
+		new_entry->vector_instructions = b;
+		new_entry->power_consumption = c;
+		LUT_entry_list.push_back(new_entry);
+	}
+	// sort the array by vector_instructions
+	std::sort(LUT_entry_list.begin(), LUT_entry_list.end(), lutentrysorter);
+}
+
+//genetic algorithm code
 
 /*this is the objective function - must return TRUE upon evaluation; false otherwise */
 /* option 1: examine all past data, run genetic to optimize instructions,
@@ -66,6 +142,35 @@ run instructions and get more data */
  /* this means i'm only looking at the effects of an instruction on its own time */
  /* cumulative effects are lost */
 
+double euclid(struct LUT_entry* t, int nop_instructions, int vector_instructions){
+	int a = t->nop_instructions - nop_instructions;
+	int b = t->vector_instructions - vector_instructions;
+	double aa = (double) a*a;
+	double bb = (double) b*b;
+	return sqrt(aa+bb);
+}
+
+double find_in_LUT(unsigned int nop_instructions, unsigned int vector_instructions)
+{
+	// check for invalid chromosomes
+	if (nop_instructions < 0 || vector_instructions < 0) return -10000.0;
+
+	// find the nearest neighbor and return its power
+	double low_dist = 1000000.0;
+	double power = -1.0;
+	if ( 1 ) { // currently there's no need for a more complex algorithm with only a few LUT entries
+		for (int i=0;i<LUT_entry_list.size(); i++){
+			double d;
+			if (d = euclid(LUT_entry_list[i], nop_instructions, vector_instructions) < low_dist){
+				low_dist = d;
+				power = LUT_entry_list[i]->power_consumption;
+			}
+		}
+	}
+	if (power == -1.0) e("couldn't find power");
+	return power;
+}
+
 boolean struggle_score(population *pop, entity *entity)
   {
   int           k;              /* Loop variable over all alleles. */
@@ -73,19 +178,17 @@ boolean struggle_score(population *pop, entity *entity)
   entity->fitness = 0.0; /* entity stores details about individual solutions */
   int c; /* chromosome number aka instruction number */
   int fit=0;
-  for (c=0;c<pop->num_chromosomes;c++)
-  {
-    /* loop over alleles (individual instructions) in chromosome */
-    for (k=0;k<pop->len_chromosomes;k++){
-      if (fit = perceptron((byte *)entity->chromosome[c]) == -1) {
-        entity->fitness=0;
-        return TRUE;
-      }
-      else{
-        entity->fitness += fit;
-      }
-    }
-  }
+  unsigned int max_bytes = 1;
+  //ga_chromosome_integer_to_bytes(const population *pop, entity *joe,
+  //                                     byte **bytes, unsigned int *max_bytes)
+  byte * bytesent;
+  unsigned int numbytesent = ga_chromosome_integer_to_bytes(pop, entity, &bytesent, &max_bytes);
+
+  int a = (int) bytesent[0];
+  int b = (int) bytesent[1];
+  fprintf(stderr, "a: %d\n", a);
+  fprintf(stderr, "b: %d\n", b);
+  entity->fitness = find_in_LUT(a, b);
 
   return TRUE;
 }
@@ -95,7 +198,9 @@ void e(std::string string){
   exit(0);
 }
 
-/* cmd line: ./gen_exec sim_inst.txt supported_inst.txt v.csv */
+/* cmd line: ./gen_exec LUT_Test.txt supported_inst.txt sim_inst.txt */
+/* this version uses integer chromosomes */
+/* solve with integer chromosomes where the chromosome length is three, one for each type. no allele processing */
 int main(int argc, char **argv)
   {
     if (argc != 4) {
@@ -103,47 +208,44 @@ int main(int argc, char **argv)
       return -1;
     }
 
-    /* process sim_inst and supported_inst files for length */
-    FILE* sim_inst = fopen(argv[1], "r");
+    if (populate_LUT_table(argv[1], argv[3]) < 0){
+      fprintf(stderr, "LUT table generation failed\n");
+      return -1;
+    }
+
+
+    /* open files */
+    std::ifstream LUT;
+    LUT.open(argv[1]);
+
+    std::ifstream supported_inst;
+    supported_inst.open(argv[2]);
+
+	FILE* sim_inst = fopen(argv[3], "r");
     if (sim_inst == NULL){
       e("failed to open sim_inst file");
     }
-    FILE* v = fopen(argv[3], "r");
-    if (v==NULL)
-    {
-      e("failed to open v.csv file");
-    }
-    FILE* supported_inst = fopen(argv[2], "r");
-    if (supported_inst == NULL)
-    {
-      e("failed to open supported_inst file");
-    }
-    int supported_inst_length = how_long_is_file(supported_inst);
-    if (supported_inst_length < 0) {
+
+	/* process files for length */
+    int supported_inst_file_length = 1;// dumb since old function call fails
+    if (supported_inst_file_length < 1) {
       fclose(sim_inst);
-      fclose(supported_inst);
-      fclose(v);
+      supported_inst.close();
+      LUT.close();
       e("failed to process supported_inst");
     }
 
-    supported_inst_list = (struct inst *) calloc(supported_inst_length, sizeof(struct inst));
-    if (supported_inst_list == NULL){
+	// do all of the file I/O
+    if (read_inst(sim_inst, supported_inst, time_chunk_list, LUT) < 0){
       fclose(sim_inst);
-      fclose(supported_inst);
-      fclose(v);
-      e("createing supported instruction list failed");
-    }
-
-    if (read_inst(sim_inst, supported_inst, time_chunk_list, v) < 0){
-      fclose(sim_inst);
-      fclose(supported_inst);
-      fclose(v);
+      supported_inst.close();
+      LUT.close();
       e("failed to process supported_inst or sim_inst_len - 2");
 
     }
     fclose(sim_inst);
-    fclose(supported_inst);
-    fclose(v);
+    supported_inst.close();
+    LUT.close();
 
   population *pop=NULL;	/* The population of solutions. */
 
@@ -152,19 +254,19 @@ int main(int argc, char **argv)
 /*input parameters */
   pop = ga_genesis_bitstring(
        500,                      /* const int              population_size large due to improper instrucion losses*/
-       50,                        /* const int              num_chromosome */
-       ga_bit_sizeof(supported_inst_list[0].inst_len),      /* const int              len_chromo */
+       1,                        /* const int              num_chromosome */
+       sizeof(int)*3,      /* const int              len_chromo  - not sure if this is 3 or sizeof(int)*3 */
        NULL,                     /* GAgeneration_hook      generation_hook */
        NULL,                     /* GAiteration_hook       iteration_hook */
        NULL,                     /* GAdata_destructor      data_destructor */
        NULL,                     /* GAdata_ref_incrementor data_ref_incrementor */
        struggle_score,           /* GAevaluate             evaluate */
-       ga_seed_printable_random, /* GAseed                 seed */
+       ga_seed_integer_random, /* GAseed                 seed */
        NULL,                     /* GAadapt                adapt */
        ga_select_one_sus,        /* GAselect_one           select_one */
        ga_select_two_sus,        /* GAselect_two           select_two */
-       ga_mutate_printable_singlepoint_drift, /* GAmutate  mutate */
-       ga_crossover_char_allele_mixing, /* GAcrossover     crossover */
+       ga_mutate_integer_singlepoint_drift, /* GAmutate  mutate */
+       ga_crossover_integer_singlepoints, /* GAcrossover     crossover */
        NULL,                     /* GAreplace              replace */
        NULL                      /* void *                 userdata */
             );
@@ -182,19 +284,20 @@ int main(int argc, char **argv)
                                      pop,                     /* population              *pop */
                                      500                      /* const int               max_generations */
                                    );
+  // the thing doing the actual evolution
   ga_evolution(
          pop,                     /* population              *pop */
          100                      /* const int               max_generations */
                 );
-  char* tex = (char*) calloc(1, sizeof(supported_inst_list[0].inst_len));
-  long unsigned int texnum = sizeof(tex);
+  //char* tex = (char*) calloc(1, sizeof(int));
+  //long unsigned int texnum = sizeof(tex);
 
   printf( "The final solution found was:\n");
-  int i;
-  for (i=0;i<pop->num_chromosomes;i++)
-  {
-    printf( "%s\n", ga_chromosome_bitstring_to_string(pop, ga_get_entity_from_rank(pop,i), tex, &texnum));
-  }
+
+  size_t len = 3;
+  char* tex = (char *) calloc(1, sizeof(int)*len);
+  printf("%s\n", ga_chromosome_integer_to_string(pop, ga_get_entity_from_rank(pop,0), tex, &len));
+
   printf( "Fitness score = %f\n", ga_get_entity_from_rank(pop,0)->fitness);
 
 
