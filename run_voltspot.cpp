@@ -43,14 +43,10 @@ int populate_LUT(char* LUT_filename, char* sim_inst_filename){
   if (sim_inst.is_open())
   {
     //the output should be LUT.ptrace
-    for (int num_nops = 0; num_nops < 1001; num_nops+=100)
+    for (int num_nops = 31; num_nops < 60; num_nops++)
     {
-      if (num_nops > 0 && num_nops < 135) num_nops -= 99; //go in steps until reach 30 for greater granularity
-      if (num_nops > 30) num_nops += 30;
-      for (int num_vectors = 0; num_vectors < 1001; num_vectors += 100)
+      for (int num_vectors = 1; num_vectors < 60; num_vectors ++)
       {
-        if (num_vectors > 0 && num_vectors < 135) num_vectors -= 99; //go in steps until reach 30 for greater granularity
-        if (num_vectors > 30) num_vectors += 30;
         // this function creates a ptrace called LUT.ptrace
         fprintf(stderr, "num_nops: %d; num_vectors: %d\n", num_nops, num_vectors);
         if (create_ptrace(num_nops, num_vectors, 4) < 0)
