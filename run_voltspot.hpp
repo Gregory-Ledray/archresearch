@@ -8,6 +8,6 @@ int populate_LUT(char* LUT_filename, char* sim_inst_filename);
 
 int append_LUT(char* LUT_filename, int num_nops, int num_vectors);
 
-int create_ptrace(int num_nops, int num_vectors);
+int create_ptrace(int num_nops, int num_vectors, int num_loops);
 
 #endif

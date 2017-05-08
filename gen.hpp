@@ -65,7 +65,7 @@ int populate_time_chunk_list(FILE *sim_inst, FILE *v, struct time_chunk* time_ch
 int read_inst(char* sim_inst_filename, char* supported_inst, struct time_chunk* time_chunk_list, char* v);
 
 //LUT creation and sorting
-int populate_LUT_vector(std::ifstream LUT);
+int populate_LUT_vector(char* LUT_filename);
 
 //Struggle score related functions
 double euclid(struct LUT_entry* t, int nop_instructions, int vector_instructions);

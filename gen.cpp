@@ -2,12 +2,11 @@
 
 //input processing with a LUT
 /*
-cmd line: ./genetic LUT_Test.txt
 // lookup table format: nop_instructions vector_instructions power
 lookup table data structure:
 to look up the data or its nearest neighbor in O(1):
-
 */
+
 #include "gen.hpp"
 #include "run_voltspot.hpp"
 
@@ -113,12 +112,16 @@ bool lutentrysorter(struct LUT_entry* a, struct LUT_entry* b){
 }
 
 // populate std::vector<struct LUT_entry*> LUT_entry_list
-int populate_LUT_vector(std::ifstream LUT)
+int populate_LUT_vector(char* LUT_filename)
 {
+  std::ifstream LUT_filestream;
+  LUT_filestream.open(LUT_filename);
+  if (!LUT_filestream.is_open()) return -1;
+
 	int a, b;
 	double c;
 
-	while(LUT >> a >> b >> c){
+	while(LUT_filestream >> a >> b >> c){
 		struct LUT_entry* new_entry = (struct LUT_entry*) calloc(1, sizeof(LUT_entry));
 		new_entry->nop_instructions = a;
 		new_entry->vector_instructions = b;
@@ -127,6 +130,13 @@ int populate_LUT_vector(std::ifstream LUT)
 	}
 	// sort the array by vector_instructions
 	std::sort(LUT_entry_list.begin(), LUT_entry_list.end(), lutentrysorter);
+
+  for (int i=0;i<LUT_entry_list.size(); i++){
+    fprintf(stderr, "%d\n", LUT_entry_list[i]->nop_instructions);
+    fprintf(stderr, "%d\n", LUT_entry_list[i]->vector_instructions);
+    fprintf(stderr, "%f\n", LUT_entry_list[i]->power_consumption);
+  }
+  exit(1);
 }
 
 //genetic algorithm code
@@ -146,7 +156,8 @@ run instructions and get more data */
  /* cumulative effects are lost */
 
 double euclid(struct LUT_entry* t, int nop_instructions, int vector_instructions){
-	int a = t->nop_instructions - nop_instructions;
+  fprintf(stderr, "euc\n");
+  int a = t->nop_instructions - nop_instructions;
 	int b = t->vector_instructions - vector_instructions;
 	double aa = (double) a*a;
 	double bb = (double) b*b;
@@ -155,11 +166,12 @@ double euclid(struct LUT_entry* t, int nop_instructions, int vector_instructions
 
 double find_in_LUT(unsigned int nop_instructions, unsigned int vector_instructions)
 {
+  fprintf(stderr, "find_in_LUT: nop: %d, vect: %d\n", nop_instructions, vector_instructions);
 	// check for invalid chromosomes
 	if (nop_instructions < 0 || vector_instructions < 0) return -10000.0;
 
 	// find the nearest neighbor and return its power
-	double low_dist = 1000000.0;
+	double low_dist = 5000000000.0;
 	double power = -1.0;
 	if ( 1 ) { // currently there's no need for a more complex algorithm with only a few LUT entries
 		for (int i=0;i<LUT_entry_list.size(); i++){
@@ -168,6 +180,7 @@ double find_in_LUT(unsigned int nop_instructions, unsigned int vector_instructio
 				low_dist = d;
 				power = LUT_entry_list[i]->power_consumption;
 			}
+      fprintf(stderr, "d: %f\n", d);
 		}
 	}
 	if (power == -1.0) e("couldn't find power");
@@ -176,19 +189,11 @@ double find_in_LUT(unsigned int nop_instructions, unsigned int vector_instructio
 
 boolean struggle_score(population *pop, entity *entity)
   {
-  int           k;              /* Loop variable over all alleles. */
 
   entity->fitness = 0.0; /* entity stores details about individual solutions */
-  int c; /* chromosome number aka instruction number */
-  int fit=0;
-  unsigned int max_bytes = 1;
-  //ga_chromosome_integer_to_bytes(const population *pop, entity *joe,
-  //                                     byte **bytes, unsigned int *max_bytes)
-  byte * bytesent;
-  unsigned int numbytesent = ga_chromosome_integer_to_bytes(pop, entity, &bytesent, &max_bytes);
-
-  int a = (int) bytesent[0];
-  int b = (int) bytesent[1];
+  int* chromos = (int*) entity->chromosome;
+  int a = chromos[0];
+  int b  = chromos[1];
   fprintf(stderr, "a: %d\n", a);
   fprintf(stderr, "b: %d\n", b);
   entity->fitness = find_in_LUT(a, b);
@@ -201,7 +206,7 @@ void e(std::string string){
   exit(0);
 }
 
-/* cmd line: ./gen_exec LUT_Test.txt supported_inst.txt sim_inst.txt */
+/* cmd line: ./genetic LUT_Test.txt supported_inst.txt sim_inst.txt */
 /* this version uses integer chromosomes */
 /* solve with integer chromosomes where the chromosome length is three, one for each type. no allele processing */
 int main(int argc, char **argv)
@@ -213,8 +218,16 @@ int main(int argc, char **argv)
 
     fprintf(stderr, "Populating the LUT\n");
 
+    /*
+    // this has already been populated
     if (populate_LUT(argv[1], argv[3]) < 0){
       fprintf(stderr, "LUT table generation failed\n");
+      return -1;
+    }
+    */
+
+    if (populate_LUT_vector(argv[1]) < 0){
+      fprintf(stderr, "populating the LUT vector failed\n");
       return -1;
     }
 
@@ -230,18 +243,18 @@ int main(int argc, char **argv)
   population *pop=NULL;	/* The population of solutions. */
 
   random_seed(2003);	/* Random seed requires any integer parameter. */
-
+  fprintf(stderr, "rando\n");
 /*input parameters */
-  pop = ga_genesis_bitstring(
+  pop = ga_genesis_integer(
        500,                      /* const int              population_size large due to improper instrucion losses*/
-       1,                        /* const int              num_chromosome */
-       sizeof(int)*3,      /* const int              len_chromo  - not sure if this is 3 or sizeof(int)*3 */
+       2,                        /* const int              num_chromosome */
+       sizeof(int),                        /* const int              len_chromo */
        NULL,                     /* GAgeneration_hook      generation_hook */
        NULL,                     /* GAiteration_hook       iteration_hook */
        NULL,                     /* GAdata_destructor      data_destructor */
        NULL,                     /* GAdata_ref_incrementor data_ref_incrementor */
        struggle_score,           /* GAevaluate             evaluate */
-       ga_seed_integer_random, /* GAseed                 seed */
+       ga_seed_integer_zero, /* GAseed                 seed */
        NULL,                     /* GAadapt                adapt */
        ga_select_one_sus,        /* GAselect_one           select_one */
        ga_select_two_sus,        /* GAselect_two           select_two */
@@ -250,6 +263,7 @@ int main(int argc, char **argv)
        NULL,                     /* GAreplace              replace */
        NULL                      /* void *                 userdata */
             );
+    fprintf(stderr, "ga_genesis_bitstring complete\n");
 
     ga_population_set_parameters(
        pop,                     /* population              *pop */
@@ -259,16 +273,11 @@ int main(int argc, char **argv)
        0.2,                     /* double                  mutation */
        0.0                      /* double                  migration */
                               );
-
+fprintf(stderr, "ga_population_set_parameters complete\n");
                               ga_evolution(
                                      pop,                     /* population              *pop */
                                      500                      /* const int               max_generations */
                                    );
-  // the thing doing the actual evolution
-  ga_evolution(
-         pop,                     /* population              *pop */
-         100                      /* const int               max_generations */
-                );
   //char* tex = (char*) calloc(1, sizeof(int));
   //long unsigned int texnum = sizeof(tex);
 
