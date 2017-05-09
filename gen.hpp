@@ -4,6 +4,7 @@
 
 
 #define DEBUG 1
+#define GEN_NEW_LUT 0
 
 extern "C"{
 #include <gaul.h>
@@ -58,11 +59,6 @@ void e(std::string string);
 #else
 void e(char * string);
 #endif
-
-
-int how_long_is_file(FILE *fp);
-int populate_time_chunk_list(FILE *sim_inst, FILE *v, struct time_chunk* time_chunk_list);
-int read_inst(char* sim_inst_filename, char* supported_inst, struct time_chunk* time_chunk_list, char* v);
 
 //LUT creation and sorting
 int populate_LUT_vector(char* LUT_filename);
