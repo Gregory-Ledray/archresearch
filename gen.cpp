@@ -21,6 +21,7 @@ extern "C"{
 #include <vector>
 #include <cmath>
 #include <string>
+#include <ctime>
 
 
 //LUT code
@@ -89,7 +90,7 @@ double euclid(struct LUT_entry* t, int nop_instructions, int vector_instructions
 
 double find_in_LUT(unsigned int nop_instructions, unsigned int vector_instructions)
 {
-  fprintf(stderr, "find_in_LUT: nop: %d, vect: %d\n", nop_instructions, vector_instructions);
+  //fprintf(stderr, "find_in_LUT: nop: %d, vect: %d\n", nop_instructions, vector_instructions);
 	// check for invalid chromosomes
 	if (nop_instructions < 0 || vector_instructions < 0) return -10000.0;
 
@@ -110,28 +111,32 @@ double find_in_LUT(unsigned int nop_instructions, unsigned int vector_instructio
 	return power;
 }
 int times_called = 0;
+char* text = NULL;
 boolean struggle_score(population *pop, entity *entity)
 {
   entity->fitness = 0.0; /* entity stores details about individual solutions */
 
   size_t textlen;
   textlen = 10;
-  char* text = (char*) calloc(1, sizeof(char)*10);
+  if (text == NULL) text = (char*) calloc(1, sizeof(char)*10);
+  else{
+    for (int i=0;i<textlen;i++) text[i] = '\0';
+  }
 
-  fprintf(stderr, "%s\n", ga_chromosome_integer_to_string(
-                                pop, entity,
-                                text, &textlen) );
+  ga_chromosome_integer_to_string(pop, entity, text, &textlen);
 
   int a = atoi( strtok(text, " ") );
-  int b = atoi( strtok(text, " ") );
-  fprintf(stderr, "%d, %d\n", a, b);
+  //fprintf(stderr, "a");
+  int b = atoi( strtok(NULL, "\n\0") );
+  //fprintf(stderr, "%d, %d\n", a, b);
+  //free(text);
 
-  if (a > 1000) a = a % 1000;
-  if (b > 1000) b = b % 1000;
+  if (a >= 100) a = a % 100;
+  if (b >= 100) b = b % 100;
 
   double fit = find_in_LUT(a, b);
-  if (fit < 0) fit = 0.0;
-  fprintf(stderr, "fit: %f\ntimes called: %d\n", fit, times_called++);
+  if (fit < 0.0) fit = 0.0;
+  //fprintf(stderr, "fit: %f\ntimes called: %d\n", fit, times_called++);
   entity->fitness = fit;
 
   return TRUE;
@@ -141,21 +146,39 @@ void e(std::string string){
   fprintf(stderr, "%s", string.c_str());
   exit(0);
 }
+int num_gens_til_convergene = 0;
+char* tex2 = NULL;
+boolean print_best(int throw_away, population * poppers)
+{
 
-/* cmd line: ./genetic LUT_Test.txt */
+  size_t len = 10;
+  free(tex2);
+  tex2 = (char *) calloc(1, sizeof(int)*len);
+  entity* dos = ga_get_entity_from_rank(poppers,0);
+
+  ga_chromosome_integer_to_string(poppers, ga_get_entity_from_rank(poppers,0), tex2, &len);
+
+  int a = atoi( strtok(tex2, " ") );
+  int b = atoi( strtok(NULL, "\n\0"));
+  if (a >= 100) a = a % 100;
+  if (b >= 100) b = b % 100;
+  //prints num_gens_til_convergene number of nops, number of vectors, fitness
+  num_gens_til_convergene++;
+  if (dos->fitness >= 0.5598) printf("%d %d %d %f\n", num_gens_til_convergene, a, b, dos->fitness);
+}
+
+/* cmd line: ./genetic LUT_Test.txt sim_inst.txt*/
 /* this version uses integer chromosomes */
 /* solve with integer chromosomes where the chromosome length is three, one for each type. no allele processing */
 int main(int argc, char **argv)
   {
-    if (argc != 2) {
+    if (argc != 3) {
       fprintf(stderr, "%s", "wrong number of cmd line args\n");
       return -1;
     }
 
-    fprintf(stderr, "Populating the LUT\n");
-
   #if GEN_NEW_LUT
-    if (populate_LUT(LUT, sim_inst_filename) < 0) return -1;
+    if (populate_LUT(argv[1], argv[2]) < 0) return -1;
   #endif
 
     if (populate_LUT_vector(argv[1]) < 0){
@@ -163,66 +186,83 @@ int main(int argc, char **argv)
       return -1;
     }
 
-    fprintf(stderr, "Beginning the genetic algorithm\n");
+    int pop_size_lp = 10;
+    int num_gens = 10;
+    double crossover_rate = 0.1;
+    double mutation_rate = 0.1;
+    //fprintf(stderr, "new run population_size: %d; num_gens: %d\n", pop_size_lp, num_gens);
+    for (pop_size_lp = 10;pop_size_lp < 501; pop_size_lp+=10)
+    {
+      for (num_gens = 10; num_gens < 100; num_gens += 10)
+      {
+        for (crossover_rate=0.1; crossover_rate < 0.9; crossover_rate+=0.1)
+        {
+          for (mutation_rate = 0.1; mutation_rate < 0.9; mutation_rate += 0.1)
+          {
 
-  population *pop=NULL;	/* The population of solutions. */
+            printf("New: %d %d %f %f\n", pop_size_lp, num_gens, crossover_rate, mutation_rate);
 
-  random_seed(2003);	/* Random seed requires any integer parameter. */
-/*input parameters */
-  pop = ga_genesis_integer(
-       500,                      /* const int              population_size large due to improper instrucion losses*/
-       2,                        /* const int              num_chromosome */
-       1,                        /* const int              len_chromo */
-       NULL,                     /* GAgeneration_hook      generation_hook */
-       NULL,                     /* GAiteration_hook       iteration_hook */
-       NULL,                     /* GAdata_destructor      data_destructor */
-       NULL,                     /* GAdata_ref_incrementor data_ref_incrementor */
-       struggle_score,           /* GAevaluate             evaluate */
-       ga_seed_integer_zero, /* GAseed                 seed */
-       NULL,                     /* GAadapt                adapt */
-       ga_select_one_sus,        /* GAselect_one           select_one */
-       ga_select_two_sus,        /* GAselect_two           select_two */
-       ga_mutate_integer_allpoint, /* GAmutate  mutate */
-       ga_crossover_integer_singlepoints, /* GAcrossover     crossover */
-       NULL,                     /* GAreplace              replace */
-       NULL                      /* void *                 userdata */
-            );
+      population *pop=NULL;	/* The population of solutions. */
 
-    ga_population_set_parameters(
-       pop,                     /* population              *pop */
-       GA_SCHEME_DARWIN,        /* const ga_class_type     class */
-       GA_ELITISM_PARENTS_SURVIVE,  /* const ga_elitism_type   elitism */
-       0.0,                     /* double                  crossover */
-       0.5,                     /* double                  mutation */
-       0.2                      /* double                  migration */
-                              );
-    ga_evolution(
+      random_seed(200312);	/* Random seed requires any integer parameter. */
+    /*input parameters */
+      pop = ga_genesis_integer(
+           pop_size_lp,                      /* const int              population_size large due to improper instrucion losses*/
+           2,                        /* const int              num_chromosome */
+           1,                        /* const int              len_chromo */
+           print_best,                     /* GAgeneration_hook      generation_hook */
+           NULL,                     /* GAiteration_hook       iteration_hook */
+           NULL,                     /* GAdata_destructor      data_destructor */
+           NULL,                     /* GAdata_ref_incrementor data_ref_incrementor */
+           struggle_score,           /* GAevaluate             evaluate */
+           ga_seed_integer_random, /* GAseed                 seed */
+           NULL,                     /* GAadapt                adapt */
+           ga_select_one_sus,        /* GAselect_one           select_one */
+           ga_select_two_sus,        /* GAselect_two           select_two */
+           ga_mutate_integer_singlepoint_randomize, /* GAmutate  mutate */
+           ga_crossover_integer_singlepoints, /* GAcrossover     crossover */
+           NULL,                     /* GAreplace              replace */
+           NULL                      /* void *                 userdata */
+                );
+
+        ga_population_set_parameters(
            pop,                     /* population              *pop */
-           100                      /* const int               max_generations */
-         );
-  //char* tex = (char*) calloc(1, sizeof(int));
-  //long unsigned int texnum = sizeof(tex);
+           GA_SCHEME_DARWIN,        /* const ga_class_type     class */
+           GA_ELITISM_PARENTS_SURVIVE,  /* const ga_elitism_type   elitism */
+           crossover_rate,              /* double                  crossover */
+           mutation_rate,               /* double                  mutation */
+           0.0                      /* double                  migration */
+                                  );
+      int start = clock();
+        ga_evolution(
+               pop,                     /* population              *pop */
+               num_gens                      /* const int               max_generations */
+             );
+      int end = clock();
+      char* tex2 = NULL;
+      size_t len = 10;
+      tex2 = (char *) calloc(1, sizeof(int)*len);
+      entity* dos = ga_get_entity_from_rank(pop,0);
 
-  printf( "The final solution found was:\n");
+      ga_chromosome_integer_to_string(pop, ga_get_entity_from_rank(pop,0), tex2, &len);
 
-  size_t len = 3;
-  char* tex = (char *) calloc(1, sizeof(int)*len);
-  entity* uno = ga_get_entity_from_rank(pop,0);
-  printf("%s\n", ga_chromosome_integer_to_string(pop, ga_get_entity_from_rank(pop,0), tex, &len));
-  printf("score: %f\n", uno->fitness);
+      int a = atoi( strtok(tex2, " ") );
+      int b = atoi( strtok(NULL, "\n\0"));
+      if (a >= 100) a = a % 100;
+      if (b >= 100) b = b % 100;
+      printf("Final Generation!\n");
+      printf("%d %d %f\n", a, b, dos->fitness);
+      num_gens_til_convergene = 0;
 
+      ga_extinction(pop);	/* Deallocates all memory associated with
+      		 * the population and it's entities.
+      		 */
+           free(tex2);
 
-  char* tex2 = (char *) calloc(1, sizeof(int)*len);
-  entity* dos = ga_get_entity_from_rank(pop,1);
-  printf("%s\n", ga_chromosome_integer_to_string(pop, ga_get_entity_from_rank(pop,1), tex2, &len));
-  printf("score: %f\n", dos->fitness);
-
-  printf( "Fitness score = %f\n", ga_get_entity_from_rank(pop,0)->fitness);
-
-
-  ga_extinction(pop);	/* Deallocates all memory associated with
-  		 * the population and it's entities.
-  		 */
+      printf("time_taken: %f\n", double(end-start) / CLOCKS_PER_SEC);
+    }}
+    }
+  }
 
   exit(EXIT_SUCCESS);
 }
